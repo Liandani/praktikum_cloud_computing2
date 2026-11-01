@@ -1,0 +1,64 @@
+# GitHub Actions Workflow untuk Deploy TaskFlow Laravel ke Azure App Service (PHP Linux)
+name: Deploy TaskFlow Laravel to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: 'taskflow-laravel'   # Ganti dengan nama Azure App Service Anda
+  PHP_VERSION: '8.3'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: mbstring, xml, ctype, iconv, intl, pdo, pdo_mysql, bcmath, zip
+          coverage: none
+
+      - name: Install Composer Dependencies
+        run: |
+          composer install --no-dev --prefer-dist --optimize-autoloader --no-progress --no-interaction
+
+      - name: Zip Artifact for Deployment
+        run: |
+          zip -r release.zip . -x '*.git*' 'node_modules/*' '.env' 'storage/logs/*'
+
+      - name: Upload artifact for deployment jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: laravel-app
+          path: release.zip
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: 'Production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: laravel-app
+
+      - name: Unzip artifact for deployment
+        run: unzip release.zip
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
